@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Interstellar V19 - The Snap</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Helvetica Neue', 'Arial', sans-serif; user-select: none; }
+        
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; transition: opacity 2s ease-out; }
+        
+        /* 摄像头预览 */
+        #video-input { 
+            position: absolute; bottom: 20px; left: 20px; 
+            width: 200px; height: 150px; 
+            border-radius: 4px; border: 1px solid #333; 
+            z-index: 2; transform: scaleX(-1); opacity: 0; transition: opacity 0.5s; 
+            background: #000; pointer-events: none;
+        }
+        #video-input.active { opacity: 0.5; }
+
+        /* HUD */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; right: 0; padding: 40px;
+            z-index: 10; pointer-events: none;
+            display: flex; justify-content: space-between; transition: opacity 0.5s;
+        }
+        .hud-panel { color: #88aacc; display: flex; flex-direction: column; gap: 8px; }
+        h1 { font-weight: 100; font-size: 20px; letter-spacing: 8px; margin: 0; color: #fff; opacity: 0.9; }
+        
+        .status-row { display: flex; align-items: center; gap: 10px; }
+        .hand-indicator {
+            width: 8px; height: 8px; border-radius: 50%; 
+            background: #222; border: 1px solid #444; transition: 0.2s;
+        }
+        .hand-indicator.active { background: #00ff00; box-shadow: 0 0 8px #00ff00; border-color: #fff; }
+        .status-text { font-size: 11px; letter-spacing: 2px; color: #557799; text-transform: uppercase; width: 220px; }
+        
+        /* 警告文字 */
+        #warning-msg {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            font-size: 24px; color: #ff3333; letter-spacing: 10px; font-weight: bold;
+            text-shadow: 0 0 20px #ff0000; opacity: 0; transition: opacity 0.2s;
+            pointer-events: none; z-index: 20; text-align: center; width: 100%;
+        }
+
+        /* 结局 UI */
+        #endgame-ui {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 50; display: none; flex-direction: column; align-items: center; gap: 25px;
+            opacity: 0; transition: opacity 2s ease-in;
+        }
+        .end-title { color: white; font-size: 18px; letter-spacing: 6px; margin-bottom: 20px; text-transform: uppercase; text-align: center; }
+        
+        .choice-btn {
+            background: transparent; border: 1px solid rgba(255,255,255,0.3);
+            color: white; padding: 15px 0; cursor: pointer; transition: 0.3s; width: 260px; 
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .choice-btn:hover { background: white; color: black; box-shadow: 0 0 20px white; }
+        
+        .btn-cn { font-size: 16px; letter-spacing: 5px; margin-bottom: 6px; font-weight: bold; text-indent: 5px; }
+        .btn-en { font-size: 10px; letter-spacing: 2px; opacity: 0.6; text-transform: uppercase; }
+
+        /* --- 新增：欧拉认证界面 (Input e UI) --- */
+        #auth-ui {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 60; display: none; flex-direction: column; align-items: center;
+            background: rgba(0, 10, 20, 0.95); border: 1px solid #44aaff;
+            padding: 40px; box-shadow: 0 0 50px rgba(68, 170, 255, 0.2);
+            opacity: 0; transition: opacity 0.5s;
+        }
+        .auth-title { color: #44aaff; font-size: 14px; letter-spacing: 4px; margin-bottom: 30px; text-transform: uppercase; }
+        .auth-input {
+            background: transparent; border: none; border-bottom: 2px solid #333;
+            color: white; font-family: 'Courier New', monospace; font-size: 24px;
+            text-align: center; width: 200px; margin-bottom: 30px; padding: 10px;
+            outline: none; letter-spacing: 4px; transition: 0.3s;
+        }
+        .auth-input:focus { border-color: #44aaff; box-shadow: 0 5px 15px -5px rgba(68,170,255,0.3); }
+        .auth-actions { display: flex; gap: 20px; }
+        .auth-btn {
+            background: transparent; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.7);
+            padding: 8px 20px; cursor: pointer; font-size: 12px; letter-spacing: 2px; transition: 0.3s;
+        }
+        .auth-btn:hover { border-color: white; color: white; background: rgba(255,255,255,0.1); }
+        .error-shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; border-color: #ff3333 !important; }
+        @keyframes shake { 10%, 90% { transform: translate3d(-1px, 0, 0); } 20%, 80% { transform: translate3d(2px, 0, 0); } 30%, 50%, 70% { transform: translate3d(-4px, 0, 0); } 40%, 60% { transform: translate3d(4px, 0, 0); } }
+
+        /* 谢幕动画容器 */
+        #credits-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: black; z-index: 100; pointer-events: none;
+            display: flex; justify-content: center; align-items: center;
+            opacity: 0; 
+        }
+        .credit-block {
+            position: absolute; width: 100%; text-align: center; opacity: 0;
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+        }
+        .cn-text { color: white; font-size: 32px; letter-spacing: 12px; font-weight: 200; text-indent: 12px; }
+        .en-text { color: #888; font-size: 12px; letter-spacing: 4px; text-transform: uppercase; font-weight: 400; text-indent: 4px; }
+        .signature { color: white; font-size: 16px; letter-spacing: 2px; }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: scale(0.95); }
+            20% { opacity: 1; transform: scale(1.0); }
+            80% { opacity: 1; transform: scale(1.0); }
+            100% { opacity: 0; transform: scale(1.05); }
+        }
+
+        /* 封面 */
+        #landing-page {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 200; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transition: opacity 1.0s ease;
+        }
+        .landing-title-cn {
+            color: white; font-size: 60px; font-weight: 100; letter-spacing: 20px;
+            text-shadow: 0 0 30px rgba(255,255,255,0.3); margin-bottom: 15px; 
+            text-align: center; text-indent: 20px;
+        }
+        .landing-title-en {
+            color: #666; font-size: 14px; letter-spacing: 12px; margin-bottom: 60px;
+            text-transform: uppercase; text-align: center; text-indent: 12px;
+        }
+        #enter-btn {
+            background: transparent; border: 1px solid rgba(255,255,255,0.4);
+            color: rgba(255,255,255,0.8); width: 200px; padding: 15px 0; cursor: pointer;
+            transition: all 0.4s;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        #enter-btn:hover {
+            background: white; color: black; border-color: white; box-shadow: 0 0 30px rgba(255,255,255,0.5);
+        }
+
+        /* Loading */
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        #start-btn {
+            padding: 15px 50px; font-size: 16px; border: 1px solid #335577; 
+            background: #05101a; color: #5588aa; cursor: pointer;
+            letter-spacing: 4px; display: none; margin-top: 20px;
+        }
+        #start-btn:hover { background: #0a1a2a; color: #fff; border-color: #fff; }
+        
+        .loader-text { color: #444; font-size: 10px; letter-spacing: 4px; margin-bottom: 15px; }
+        
+        #progress-container {
+            width: 300px; height: 2px; background: #222; margin-top: 20px; display: none;
+            position: relative;
+        }
+        #progress-bar {
+            width: 0%; height: 100%; background: #44aaff; 
+            box-shadow: 0 0 10px #44aaff; transition: width 0.2s ease-out;
+        }
+        #progress-status {
+            color: #44aaff; font-size: 10px; letter-spacing: 2px; margin-top: 10px; 
+            text-align: center; text-transform: uppercase; height: 20px; width: 100%;
+        }
+
+    </style>
+    
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <audio id="bgm" src="bgm.flac" loop crossorigin="anonymous"></audio>
+    <audio id="sfx-tinnitus" src="tinnitus.mp3" crossorigin="anonymous"></audio>
+
+    <!-- 1. 封面页 -->
+    <div id="landing-page">
+        <div class="landing-title-cn">奇点</div>
+        <div class="landing-title-en">SINGULARITY</div>
+        <button id="enter-btn">
+            <span style="font-size: 18px; letter-spacing: 4px; text-indent: 4px; font-weight: bold; margin-bottom: 4px;">开始</span>
+            <span style="font-size: 10px; opacity: 0.5; letter-spacing: 2px; text-indent: 2px;">ENTER</span>
+        </button>
+    </div>
+
+    <!-- 2. 加载页 -->
+    <div id="overlay">
+        <div class="loader-text" id="loader-msg">SYSTEM BOOT SEQUENCE...</div>
+        <button id="start-btn">ENGAGE SYSTEM</button>
+        <div id="progress-container"><div id="progress-bar"></div></div>
+        <div id="progress-status"></div>
+        <div style="margin-top:20px; color: #333; font-size: 10px;">Check: bgm.flac & tinnitus.mp3</div>
+    </div>
+
+    <!-- 3. UI -->
+    <div id="warning-msg">CRITICAL STABILITY<br><span id="countdown">2.71</span></div>
+
+    <!-- 4. 结局 UI -->
+    <div id="endgame-ui">
+        <div class="end-title">Cosmic Silence</div>
+        <button class="choice-btn" id="btn-reboot">
+            <span class="btn-cn">重启宇宙</span>
+            <span class="btn-en">Reboot Universe</span>
+        </button>
+        <button class="choice-btn" id="btn-silence">
+            <span class="btn-cn">接受命运</span>
+            <span class="btn-en">Accept Fate</span>
+        </button>
+    </div>
+
+    <!-- 5. 欧拉认证 UI (新增) -->
+    <div id="auth-ui">
+        <div class="auth-title">IDENTITY VERIFICATION</div>
+        <input type="text" id="euler-input" class="auth-input" placeholder="e = ?" autocomplete="off">
+        <div class="auth-actions">
+            <button class="auth-btn" id="auth-confirm">CONFIRM</button>
+            <button class="auth-btn" id="auth-cancel">ABORT</button>
+        </div>
+        <div style="margin-top: 20px; font-size: 10px; color: #555;">INPUT EULER'S NUMBER (5 DECIMAL PLACES)</div>
+    </div>
+
+    <!-- 谢幕 -->
+    <div id="credits-layer">
+        <div class="credit-block" id="credit-1">
+            <div class="cn-text">一切归于寂静</div>
+            <div class="en-text">All returns to silence</div>
+        </div>
+        <div class="credit-block" id="credit-2">
+            <div class="cn-text">感谢游玩</div>
+            <div class="en-text">Thanks for playing</div>
+        </div>
+        <div class="credit-block" id="credit-3">
+            <div class="signature">—— 今</div>
+        </div>
+    </div>
+
+    <div id="ui-layer">
+        <div class="hud-panel">
+            <h1>INTERSTELLAR</h1>
+            <div class="status-row">
+                <div id="ind-right" class="hand-indicator"></div>
+                <div id="status-right" class="status-text">R-HAND: WAITING</div>
+            </div>
+            <div class="status-row">
+                <div id="ind-left" class="hand-indicator"></div>
+                <div id="status-left" class="status-text">L-HAND: WAITING</div>
+            </div>
+        </div>
+    </div>
+
+    <video id="video-input" playsinline></video>
+    <div id="canvas-container"></div>
+
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.154.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        let scene, camera, renderer, composer;
+        let blackHoleGroup, particles, jetParticles, photonRing, blackHoleSphere;
+        let stars = [];
+        let time = 0;
+        let audioCtx;
+
+        const state = {
+            rightHand: { detected: false, rawOpenness: 0, smoothedOpenness: 0 },
+            leftHand: { detected: false, rawOpenness: 0 },
+            zoomLevel: 0,
+            targetZoom: 0,
+            holdTimer: 0,        
+            explosionTimer: 0,   
+            isExploded: false,
+            explodedTime: 0,
+            showEndGameUI: false
+        };
+
+        const config = {
+            particleCount: 130000,
+            jetCount: 15000,
+            diskInner: 2.8,
+            diskOuter: 15.0,
+            holdDurationRequired: 2.5,
+            countdownDuration: 2.71
+        };
+
+        const AudioSys = {
+            bgmGain: null,
+            tinnitusGain: null,
+            masterCompressor: null,
+
+            init: function() {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+                this.masterCompressor = audioCtx.createDynamicsCompressor();
+                this.masterCompressor.threshold.setValueAtTime(-50, audioCtx.currentTime);
+                this.masterCompressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+                this.masterCompressor.connect(audioCtx.destination);
+
+                const bgmEl = document.getElementById('bgm');
+                const bgmSource = audioCtx.createMediaElementSource(bgmEl);
+                this.bgmGain = audioCtx.createGain();
+                this.bgmGain.gain.value = 0.8; 
+                bgmSource.connect(this.bgmGain).connect(this.masterCompressor);
+                bgmEl.play().catch(e => console.log("BGM play error:", e));
+
+                const tinEl = document.getElementById('sfx-tinnitus');
+                const tinSource = audioCtx.createMediaElementSource(tinEl);
+                this.tinnitusGain = audioCtx.createGain();
+                this.tinnitusGain.gain.value = 4.0; 
+                tinSource.connect(this.tinnitusGain).connect(this.masterCompressor);
+
+                tinEl.onended = () => {
+                    setTimeout(() => {
+                        state.showEndGameUI = true;
+                        const endUI = document.getElementById('endgame-ui');
+                        endUI.style.display = 'flex';
+                        void endUI.offsetWidth;
+                        endUI.style.opacity = 1;
+                    }, 1500);
+                };
+            },
+
+            silenceAndRing: function() {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const bgmEl = document.getElementById('bgm');
+                bgmEl.pause();
+                bgmEl.currentTime = 0; 
+                const tinEl = document.getElementById('sfx-tinnitus');
+                if(tinEl) {
+                    tinEl.currentTime = 0;
+                    tinEl.play().catch(e => {
+                        setTimeout(() => {
+                            const endUI = document.getElementById('endgame-ui');
+                            endUI.style.display = 'flex';
+                            endUI.style.opacity = 1;
+                        }, 4000);
+                    });
+                }
+            },
+
+            restart: function() {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const bgmEl = document.getElementById('bgm');
+                bgmEl.currentTime = 0;
+                bgmEl.play();
+            }
+        };
+
+        const loaderCheck = setInterval(() => {
+            if (window.Hands && window.Camera) {
+                clearInterval(loaderCheck);
+                document.getElementById('loader-msg').innerText = "SYSTEM READY";
+                document.getElementById('start-btn').style.display = 'block';
+            }
+        }, 500);
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.025);
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 24); 
+            renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            container.appendChild(renderer.domElement);
+
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.3; bloomPass.strength = 0.5; bloomPass.radius = 0.5;
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+
+            blackHoleGroup = new THREE.Group();
+            blackHoleGroup.rotation.x = Math.PI * 0.2; 
+            scene.add(blackHoleGroup);
+
+            createEventHorizon();
+            createPhotonRing();
+            createParticleDisk();
+            createZJets();
+            createOrbitingStars();
+            
+            animate();
+            window.addEventListener('resize', onWindowResize);
+            
+            // UI Bindings
+            document.getElementById('btn-reboot').addEventListener('click', showAuthUI);
+            document.getElementById('btn-silence').addEventListener('click', playEndingSequence);
+            document.getElementById('auth-confirm').addEventListener('click', verifyAuth);
+            document.getElementById('auth-cancel').addEventListener('click', () => playEndingSequence());
+        }
+
+        // --- 欧拉认证逻辑 ---
+        function showAuthUI() {
+            document.getElementById('endgame-ui').style.opacity = 0;
+            setTimeout(() => {
+                document.getElementById('endgame-ui').style.display = 'none';
+                const authUI = document.getElementById('auth-ui');
+                authUI.style.display = 'flex';
+                // Trigger reflow
+                void authUI.offsetWidth;
+                authUI.style.opacity = 1;
+                document.getElementById('euler-input').value = "";
+                document.getElementById('euler-input').focus();
+            }, 500);
+        }
+
+        function verifyAuth() {
+            const input = document.getElementById('euler-input');
+            if (input.value === "2.71828") {
+                // Success: Hide Auth, Reset Game
+                document.getElementById('auth-ui').style.opacity = 0;
+                setTimeout(() => {
+                    document.getElementById('auth-ui').style.display = 'none';
+                    resetGameWithoutReload();
+                }, 500);
+            } else {
+                // Fail: Shake effect
+                input.classList.add('error-shake');
+                setTimeout(() => input.classList.remove('error-shake'), 400);
+                input.value = "";
+                input.placeholder = "DENIED";
+                
+                // 3次错误后直接结束? (Optional, here just shake)
+            }
+        }
+
+        function resetGameWithoutReload() {
+            document.getElementById('ui-layer').style.opacity = 1;
+            document.getElementById('warning-msg').style.opacity = 0;
+            state.zoomLevel = 0; state.targetZoom = 0; state.holdTimer = 0; state.explosionTimer = 0;
+            state.isExploded = false; state.explodedTime = 0; state.gameEnded = false; state.showEndGameUI = false;
+            blackHoleSphere.scale.setScalar(1.0);
+            camera.position.z = 24;
+            AudioSys.restart();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // ... (省略重复的 Create Objects 函数，保持 V18 逻辑不变) ...
+        // 为了篇幅，createOrbitingStars, createEventHorizon, createPhotonRing, createParticleDisk, createZJets 
+        // 保持与上一个版本完全一致，无需修改。
+        
+        function createOrbitingStars() {
+            const starConfigs = [{ r: 8.0, s: 0.8, inc: 0.1, col: 0xffaa00, size: 0.15 }, { r: 18.0, s: 0.4, inc: 0.3, col: 0x88ccff, size: 0.25 }, { r: 12.0, s: 0.6, inc: -0.2, col: 0xff5555, size: 0.12 }];
+            const starGeo = new THREE.SphereGeometry(1, 16, 16);
+            starConfigs.forEach((cfg) => {
+                const mat = new THREE.MeshBasicMaterial({ color: cfg.col });
+                const mesh = new THREE.Mesh(starGeo, mat);
+                mesh.scale.setScalar(cfg.size);
+                mesh.userData = { radius: cfg.r, speed: cfg.s, inclination: cfg.inc, initialAngle: Math.random() * 6.28, originalScale: cfg.size };
+                blackHoleGroup.add(mesh);
+                stars.push(mesh);
+            });
+        }
+        function createEventHorizon() { const g = new THREE.SphereGeometry(3.0, 64, 64); const m = new THREE.MeshBasicMaterial({ color: 0x000000 }); blackHoleSphere = new THREE.Mesh(g, m); blackHoleSphere.renderOrder = 0; blackHoleGroup.add(blackHoleSphere); }
+        function createPhotonRing() { const g = new THREE.SphereGeometry(3.05, 64, 64); const m = new THREE.ShaderMaterial({ uniforms: { viewVector: { value: camera.position }, uExploded: { value: 0.0 } }, vertexShader: `uniform vec3 viewVector; uniform float uExploded; varying float intensity; void main() { vec3 vNormal = normalize(normalMatrix * normal); vec3 vNormel = normalize(normalMatrix * viewVector); intensity = pow(0.65 - dot(vNormal, vNormel), 5.0); vec3 pos = position + normal * uExploded * 20.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0); }`, fragmentShader: `varying float intensity; uniform float uExploded; void main() { float alpha = 1.0 - smoothstep(0.0, 2.0, uExploded); gl_FragColor = vec4(0.8, 0.9, 1.0, intensity * 1.5 * alpha); }`, side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }); photonRing = new THREE.Mesh(g, m); scene.add(photonRing); }
+        function createParticleDisk() { const g = new THREE.BufferGeometry(); const pos=[], orbit=[], col=[]; const c1=new THREE.Color(0xaaccff), c2=new THREE.Color(0x223355); for(let i=0;i<config.particleCount;i++){ const r=config.diskInner+Math.pow(Math.random(),2.2)*(config.diskOuter-config.diskInner); const a=Math.random()*6.28; const s=4.0/Math.sqrt(r); pos.push(Math.cos(a)*r,Math.sin(a)*r,0); const t=(r-config.diskInner)/(config.diskOuter-config.diskInner); const c=c1.clone().lerp(c2,t); col.push(c.r,c.g,c.b); orbit.push(r,s,a,Math.random()*100); } g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('aOrbit',new THREE.Float32BufferAttribute(orbit,4)); g.setAttribute('color',new THREE.Float32BufferAttribute(col,3)); const m=new THREE.ShaderMaterial({ fog:true, uniforms:{ uTime:{value:0}, uZoom:{value:0}, uExplodedTime:{value:0}, fogColor:{value:new THREE.Color(0x000000)}, fogDensity:{value:0.025} }, vertexShader:`uniform float uTime; uniform float uZoom; uniform float uExplodedTime; attribute vec4 aOrbit; attribute vec3 color; varying vec3 vColor; varying float vAlpha; varying float vFogFactor; uniform float fogDensity; void main() { vColor=color; float r=aOrbit.x; float speed=aOrbit.y; float angle=aOrbit.z; float rnd=aOrbit.w; float curAngle=angle+uTime*speed*1.5; float noise=sin(curAngle*8.0+r*1.5)+sin(curAngle*15.0-uTime*2.0)*0.5; vec3 pos=vec3(cos(curAngle)*r,sin(curAngle)*r,0.0); if(uExplodedTime>0.0){ vec3 ed=normalize(pos); ed.z+=(sin(rnd)*0.5); float es=10.0+sin(rnd)*5.0; pos+=ed*es*uExplodedTime; pos.x+=sin(uExplodedTime*5.0+rnd)*2.0; } else { float chaos=smoothstep(0.75,1.0,uZoom); if(chaos>0.0){ vec3 ed=normalize(pos); pos+=ed*chaos*20.0; float zk=(sin(rnd)*5.0+15.0); pos.z+=zk*chaos; pos.x+=sin(uTime*50.0+rnd)*chaos*2.0; pos.y+=cos(uTime*50.0+rnd)*chaos*2.0; } else { pos.z+=sin(curAngle*4.0+uTime)*0.15; } } vec4 mvPos=modelViewMatrix*vec4(pos,1.0); gl_Position=projectionMatrix*mvPos; float depth=length(mvPos.xyz); vFogFactor=1.0-exp(-(fogDensity*depth)*(fogDensity*depth)); vFogFactor=clamp(vFogFactor,0.0,1.0); float szf=max(0.0,1.0-uExplodedTime*0.2); gl_PointSize=(1.2+uZoom*3.0)*(250.0/-mvPos.z)*szf; float fa=smoothstep(-0.8,0.8,noise); float da=1.0-smoothstep(12.0,15.0,r); vAlpha=(0.2+0.6*fa)*da*0.4; if(uExplodedTime>0.0) vAlpha*=szf; vAlpha*=smoothstep(2.8,3.2,r); }`, fragmentShader:`varying vec3 vColor; varying float vAlpha; varying float vFogFactor; uniform vec3 fogColor; void main(){ if(vAlpha<0.01) discard; vec3 final=mix(vColor,fogColor,vFogFactor); float fa=vAlpha*(1.0-vFogFactor); gl_FragColor=vec4(final,fa); }`, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending }); particles=new THREE.Points(g,m); blackHoleGroup.add(particles); }
+        function createZJets() { const g=new THREE.BufferGeometry(); const pos=[], jet=[]; for(let i=0;i<config.jetCount;i++){ pos.push(0,0,0); const s=4+Math.random()*8; const side=Math.random()>0.5?1:-1; const off=Math.random()*0.2; jet.push(s,side,off); } g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3)); g.setAttribute('aJet',new THREE.Float32BufferAttribute(jet,3)); const m=new THREE.ShaderMaterial({ fog:true, uniforms:{ uTime:{value:0}, uZoom:{value:0}, uExplodedTime:{value:0}, fogColor:{value:new THREE.Color(0x000000)}, fogDensity:{value:0.025} }, vertexShader:`uniform float uTime; uniform float uZoom; uniform float uExplodedTime; attribute vec3 aJet; varying float vAlpha; varying float vFogFactor; uniform float fogDensity; void main(){ float s=aJet.x; float dir=aJet.y; float w=aJet.z; float c=fract(uTime*0.8*s); float z=c*40.0*dir; float a=uTime*12.0+z*0.5; float r=w*(1.0+abs(z)*0.03); if(uZoom>0.5) r*=(1.0+(uZoom-0.5)); vec3 pos=vec3(cos(a)*r,sin(a)*r,z); if(uExplodedTime>0.0){ pos+=normalize(pos)*uExplodedTime*15.0; pos.x+=sin(z*10.0)*uExplodedTime*5.0; pos.y+=cos(z*10.0)*uExplodedTime*5.0; } vec4 mvPos=modelViewMatrix*vec4(pos,1.0); gl_Position=projectionMatrix*mvPos; float depth=length(mvPos.xyz); vFogFactor=1.0-exp(-(fogDensity*depth)*(fogDensity*depth)); vFogFactor=clamp(vFogFactor,0.0,1.0); float szf=max(0.0,1.0-uExplodedTime*0.2); gl_PointSize=(1.0+s*0.1)*(150.0/-mvPos.z)*szf; float fade=smoothstep(0.0,5.0,abs(z))*(1.0-smoothstep(30.0,40.0,abs(z))); vAlpha=fade*0.3*szf; }`, fragmentShader:`varying float vAlpha; varying float vFogFactor; uniform vec3 fogColor; void main(){ vec3 final=mix(vec3(0.5,0.4,0.9),fogColor,vFogFactor); float fa=vAlpha*(1.0-vFogFactor); gl_FragColor=vec4(final,fa); }`, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending }); jetParticles=new THREE.Points(g,m); blackHoleGroup.add(jetParticles); }
+
+        function checkTrigger(dt) {
+            const warningEl = document.getElementById('warning-msg');
+            const countdownEl = document.getElementById('countdown');
+
+            // 1. Zoom Hold Trigger
+            if (state.rightHand.detected && state.rightHand.smoothedOpenness > 0.95) {
+                state.holdTimer += dt;
+            } else {
+                state.holdTimer = 0; state.explosionTimer = 0; warningEl.style.opacity = 0;
+            }
+
+            if (state.holdTimer > config.holdDurationRequired) {
+                state.explosionTimer += dt;
+                warningEl.style.opacity = 1;
+                let timeLeft = Math.max(0, config.countdownDuration - state.explosionTimer);
+                countdownEl.innerText = timeLeft.toFixed(2);
+                camera.position.x += (Math.random()-0.5) * 0.05 * state.explosionTimer;
+                camera.position.y += (Math.random()-0.5) * 0.05 * state.explosionTimer;
+                if (state.explosionTimer > config.countdownDuration) return true;
+            }
+            return false;
+        }
+
+        // --- 核心：响指检测逻辑 ---
+        function detectSnap(landmarks) {
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const middleTip = landmarks[12];
+            const ringTip = landmarks[16];
+            const pinkyTip = landmarks[20];
+            const wrist = landmarks[0];
+
+            function dist(p1, p2) {
+                return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+            }
+
+            // 1. 拇指 + 中指 接触 (Snap Prep)
+            const thumbMiddleTouch = dist(thumbTip, middleTip) < 0.05;
+
+            // 2. 无名指 + 小指 卷曲 (Curled)
+            const ringCurled = dist(ringTip, wrist) < 0.35; // 相对距离
+            const pinkyCurled = dist(pinkyTip, wrist) < 0.35;
+
+            // 3. 食指 伸直 (Extended) - 必须远离拇指根部(2)
+            const indexExtended = dist(indexTip, landmarks[2]) > 0.15; 
+
+            return thumbMiddleTouch && ringCurled && pinkyCurled && indexExtended;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+            const dt = 0.016; 
+
+            if (state.isExploded) {
+                state.explodedTime += 0.02;
+                document.getElementById('warning-msg').style.opacity = 0;
+                document.getElementById('ui-layer').style.opacity = 0; 
+                blackHoleSphere.scale.multiplyScalar(0.92); 
+                camera.position.z += 0.1;
+            } else {
+                // Hand Logic
+                if (state.rightHand.detected) {
+                    state.rightHand.smoothedOpenness = THREE.MathUtils.lerp(state.rightHand.smoothedOpenness, state.rightHand.rawOpenness, 0.1);
+                    state.targetZoom = state.rightHand.smoothedOpenness;
+                } else {
+                    state.targetZoom = THREE.MathUtils.lerp(state.targetZoom, 0, 0.05);
+                }
+                state.zoomLevel = THREE.MathUtils.lerp(state.zoomLevel, state.targetZoom, 0.02);
+
+                if (state.leftHand.detected) {
+                    const open = state.leftHand.rawOpenness;
+                    if (open < 0.4) blackHoleGroup.rotation.x += 0.015; 
+                    else blackHoleGroup.rotation.y += 0.015; 
+                } else {
+                    blackHoleGroup.rotation.z += 0.001; 
+                }
+
+                if (checkTrigger(dt)) {
+                    state.isExploded = true;
+                    AudioSys.silenceAndRing();
+                }
+                
+                const targetZ = 24 - (state.zoomLevel * 18);
+                camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, 0.05);
+                
+                if (state.zoomLevel > 0.8) blackHoleSphere.scale.setScalar(1.0 - (state.zoomLevel - 0.8) * 2.0);
+                else blackHoleSphere.scale.setScalar(1.0);
+            }
+
+            camera.lookAt(0,0,0);
+
+            stars.forEach(star => {
+                const d = star.userData;
+                const orbitalSpeed = 0.5 / Math.sqrt(d.radius); 
+                d.initialAngle += orbitalSpeed * (state.isExploded ? 0 : 2.0); 
+                let x = Math.cos(d.initialAngle) * d.radius;
+                let y = Math.sin(d.initialAngle) * d.radius;
+                let z = 0;
+                let y_new = y * Math.cos(d.inclination) - z * Math.sin(d.inclination);
+                let z_new = y * Math.sin(d.inclination) + z * Math.cos(d.inclination);
+                if (state.isExploded) {
+                    d.radius += 0.5; x = Math.cos(d.initialAngle) * d.radius; y = Math.sin(d.initialAngle) * d.radius;
+                    star.position.set(x, y_new, z_new).multiplyScalar(1.0 + state.explodedTime);
+                    star.scale.setScalar(d.originalScale * (1.0 - state.explodedTime * 0.1)); 
+                } else {
+                    star.position.set(x, y_new, z_new);
+                }
+            });
+
+            if (particles) { particles.material.uniforms.uTime.value = time; particles.material.uniforms.uZoom.value = state.zoomLevel; particles.material.uniforms.uExplodedTime.value = state.explodedTime; }
+            if (jetParticles) { jetParticles.material.uniforms.uTime.value = time; jetParticles.material.uniforms.uZoom.value = state.zoomLevel; jetParticles.material.uniforms.uExplodedTime.value = state.explodedTime; }
+            if (photonRing) { photonRing.position.copy(blackHoleGroup.position); photonRing.lookAt(camera.position); photonRing.material.uniforms.uExploded.value = state.explodedTime; }
+
+            composer.render();
+        }
+
+        function playEndingSequence() {
+            document.getElementById('auth-ui').style.display = 'none'; // Hide auth if open
+            document.getElementById('endgame-ui').style.display = 'none';
+            document.getElementById('canvas-container').style.opacity = 0;
+            const creditLayer = document.getElementById('credits-layer');
+            creditLayer.style.opacity = 1;
+            const c1 = document.getElementById('credit-1'); const c2 = document.getElementById('credit-2'); const c3 = document.getElementById('credit-3');
+            setTimeout(() => { c1.style.animation = "fadeInOut 5s forwards"; }, 1000);
+            setTimeout(() => { c2.style.animation = "fadeInOut 5s forwards"; }, 6000);
+            setTimeout(() => { c3.style.animation = "fadeInOut 6s forwards"; }, 11000);
+        }
+
+        document.getElementById('enter-btn').addEventListener('click', () => {
+            const lp = document.getElementById('landing-page');
+            lp.style.opacity = 0; setTimeout(() => { lp.style.display = 'none'; }, 1000);
+        });
+
+        document.getElementById('start-btn').addEventListener('click', startCamera);
+
+        async function startCamera() {
+            AudioSys.init(); 
+            document.getElementById('start-btn').style.display = 'none';
+            document.getElementById('loader-msg').style.display = 'none';
+            const pContainer = document.getElementById('progress-container');
+            const pBar = document.getElementById('progress-bar');
+            const pStatus = document.getElementById('progress-status');
+            pContainer.style.display = 'block';
+            function updateProgress(percent, text) { pBar.style.width = percent + '%'; pStatus.innerText = text; }
+            updateProgress(10, "INITIALIZING AUDIO SUBSYSTEM...");
+            if (!window.Hands) return;
+            const video = document.getElementById('video-input');
+            const overlay = document.getElementById('overlay');
+            setTimeout(() => updateProgress(30, "CALIBRATING OPTICAL SENSORS..."), 500);
+            const hands = new window.Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+            setTimeout(() => updateProgress(50, "LOADING NEURAL NETWORKS..."), 1000);
+            hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.75, minTrackingConfidence: 0.75 });
+            hands.onResults(onHandsResults);
+            const cam = new window.Camera(video, { onFrame: async () => await hands.send({image: video}), width: 320, height: 240 });
+            try {
+                setTimeout(() => updateProgress(70, "ESTABLISHING UPLINK..."), 1500);
+                await cam.start();
+                updateProgress(100, "LINK ESTABLISHED");
+                video.classList.add('active');
+                setTimeout(() => { overlay.style.display = 'none'; }, 500);
+            } catch (e) { alert("Error: " + e.message); }
+        }
+
+        function onHandsResults(results) {
+            const indRight = document.getElementById('ind-right');
+            const statusRight = document.getElementById('status-right');
+            const indLeft = document.getElementById('ind-left');
+            const statusLeft = document.getElementById('status-left');
+
+            state.rightHand.detected = false; state.leftHand.detected = false;
+            indRight.classList.remove('active'); indLeft.classList.remove('active');
+
+            if (results.multiHandLandmarks) {
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const landmarks = results.multiHandLandmarks[i];
+                    const label = results.multiHandedness[i].label;
+                    const openness = calcOpenness(landmarks);
+
+                    if (label === 'Left') { // Right Hand (Mirror)
+                        state.rightHand.detected = true;
+                        state.rightHand.rawOpenness = openness;
+                        indRight.classList.add('active');
+                        
+                        // Check for SNAP Gesture
+                        if (detectSnap(landmarks) && !state.isExploded) {
+                            state.isExploded = true;
+                            AudioSys.silenceAndRing();
+                            statusRight.innerText = "R-HAND: SNAP DETECTED!";
+                            statusRight.style.color = "#ff00ff";
+                        } else {
+                            let txt = "HOLD STABLE";
+                            if (openness > 0.95) txt = "MAX POWER";
+                            statusRight.innerText = `R-HAND: ${txt}`;
+                            statusRight.style.color = openness > 0.9 ? "#ff3333" : "#88aacc";
+                        }
+
+                    } else if (label === 'Right') { // Left Hand (Mirror)
+                        state.leftHand.detected = true;
+                        state.leftHand.rawOpenness = openness;
+                        indLeft.classList.add('active');
+                        statusLeft.innerText = openness < 0.4 ? "L-HAND: PITCH" : "L-HAND: YAW";
+                    }
+                }
+            }
+        }
+
+        function calcOpenness(landmarks) {
+            const wrist = landmarks[0];
+            const palm = Math.hypot(wrist.x - landmarks[5].x, wrist.y - landmarks[5].y);
+            let dist = 0;
+            [8, 12, 16, 20].forEach(t => dist += Math.hypot(wrist.x - landmarks[t].x, wrist.y - landmarks[t].y));
+            return Math.max(0, Math.min(1, ((dist/4)/ (palm*2.0) - 0.4) * 2.5));
+        }
+
+        init();
+    </script>
+</body>
+</html>
